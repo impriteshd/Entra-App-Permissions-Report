@@ -1,0 +1,14 @@
+# Changelog
+
+All notable changes to this project will be documented here.
+
+---
+
+## [1.0.0] - 2026-03-30
+
+### Added
+- Initial release of AppPermissionsReport.ps1
+- Exports Delegated and Application permissions for all App Registrations
+- Hashtable-based SP lookup for improved performance
+- Null-safe permission value handling (returns "UNKNOWN" if not found)
+- Auto-creates output folder if it does not exist
