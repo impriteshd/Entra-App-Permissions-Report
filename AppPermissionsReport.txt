@@ -1,0 +1,90 @@
+<#
+.SYNOPSIS
+    Exports all App Registration API permissions (Delegated & Application) to a CSV file.
+
+.DESCRIPTION
+    This script connects to Microsoft Graph and retrieves all App Registrations
+    along with their configured API permissions (both Delegated and Application).
+    Results are exported to a CSV file at D:\Scripts\Data Import\AppPermissionsReport.csv
+
+.NOTES
+    Author      : Pritesh Dhumal
+    Version     : 1.0
+    Date        : 2026-03-30
+    Requires    : Microsoft.Graph PowerShell SDK
+    Permissions : Application.Read.All, ServicePrincipal.Read.All
+
+.EXAMPLE
+    .\AppPermissionsReport.ps1
+#>
+
+# ─────────────────────────────────────────────
+# Folder path to save CSV
+# ─────────────────────────────────────────────
+$folderPath = "D:\Scripts\Data Import"
+
+if (-not (Test-Path $folderPath)) {
+    New-Item -ItemType Directory -Path $folderPath | Out-Null
+}
+
+$outputCsv = Join-Path $folderPath "AppPermissionsReport.csv"
+
+# ─────────────────────────────────────────────
+# Connect to Microsoft Graph
+# Uncomment the line below if not already connected
+# ─────────────────────────────────────────────
+# Connect-MgGraph -Scopes "Application.Read.All","ServicePrincipal.Read.All"
+
+# ─────────────────────────────────────────────
+# Get all Service Principals and Applications
+# ─────────────────────────────────────────────
+Write-Host "Fetching Service Principals..." -ForegroundColor Cyan
+$spList = Get-MgServicePrincipal -All
+
+Write-Host "Fetching App Registrations..." -ForegroundColor Cyan
+$apps = Get-MgApplication -All
+
+# Build lookup hash for faster SP search
+$spHash = @{}
+$spList | ForEach-Object { $spHash[$_.AppId] = $_ }
+
+# ─────────────────────────────────────────────
+# Process each app and its permissions
+# ─────────────────────────────────────────────
+Write-Host "Processing permissions..." -ForegroundColor Cyan
+
+$results = foreach ($app in $apps) {
+    foreach ($req in $app.RequiredResourceAccess) {
+
+        $resourceSp = $spHash[$req.ResourceAppId]
+        if (-not $resourceSp) { continue }
+
+        foreach ($access in $req.ResourceAccess) {
+
+            if ($access.Type -eq "Role") {
+                $permission     = $resourceSp.AppRoles | Where-Object { $_.Id -eq $access.Id }
+                $permissionType = "Application"
+            }
+            elseif ($access.Type -eq "Scope") {
+                $permission     = $resourceSp.Oauth2PermissionScopes | Where-Object { $_.Id -eq $access.Id }
+                $permissionType = "Delegated"
+            }
+
+            $permissionValue = if ($permission) { $permission.Value } else { "UNKNOWN" }
+
+            [PSCustomObject]@{
+                ApplicationName = $app.DisplayName
+                ApplicationId   = $app.AppId
+                ResourceAPI     = $resourceSp.DisplayName
+                PermissionName  = $permissionValue
+                PermissionType  = $permissionType
+            }
+        }
+    }
+}
+
+# ─────────────────────────────────────────────
+# Export to CSV
+# ─────────────────────────────────────────────
+$results | Export-Csv -Path $outputCsv -NoTypeInformation
+Write-Host "Export complete! File saved at:`n$outputCsv" -ForegroundColor Green
